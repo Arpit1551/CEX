@@ -24,6 +24,11 @@ struct SignupResponse {
     message: String,
 }
 
+#[derive(Deserialize, Serialize)]
+struct SigninResponse {
+    token: String,
+}
+
 struct AppState {
     users: Mutex<Vec<User>>,
     user_index: Mutex<i32>,
@@ -94,6 +99,40 @@ async fn signup(app_state: web::Data<AppState>, user_info: Json<ClientUser>) -> 
     }
 }
 
+#[post("/login")]
+async fn login(app_state: web::Data<AppState>, user_info: Json<ClientUser>) -> impl Responder {
+    let users = app_state.users.lock().unwrap();
+
+    let user_found = users
+        .iter()
+        .find(|u| u.username == user_info.username && u.password == user_info.password);
+
+    if user_found.is_none() {
+        return HttpResponse::Unauthorized().json(SignupResponse {
+            message: String::from("Incorrect credentials"),
+        });
+    };
+
+    let exp = Utc::now()
+        .checked_add_signed(Duration::hours(24))
+        .expect("valid timestamp")
+        .timestamp() as usize;
+
+    let user_index = app_state.user_index.lock().unwrap();
+    let claims = Claims {
+        sub: user_index.clone(),
+        exp,
+    };
+
+    let token = encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret("secret".as_ref()),
+    )
+    .unwrap();
+
+    HttpResponse::Ok().json(SigninResponse { token: token })
+}
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
