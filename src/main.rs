@@ -8,10 +8,17 @@ use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, sync::Mutex};
 
 #[derive(Deserialize, Serialize)]
-struct ClientUser {
+struct SignupInput {
     username: String,
     password: String,
 }
+
+#[derive(Deserialize, Serialize)]
+struct SigninInput {
+    username: String,
+    password: String,
+}
+
 #[derive(Deserialize, Serialize)]
 struct User {
     id: i32,
@@ -22,11 +29,13 @@ struct User {
 #[derive(Deserialize, Serialize)]
 struct SignupResponse {
     message: String,
+    token: String
 }
 
 #[derive(Deserialize, Serialize)]
 struct SigninResponse {
-    token: String,
+    message: String,
+    token: String
 }
 
 struct AppState {
@@ -43,7 +52,7 @@ pub struct Claims {
 }
 
 #[post("/signup")]
-async fn signup(app_state: web::Data<AppState>, user_info: Json<ClientUser>) -> impl Responder {
+async fn signup(app_state: web::Data<AppState>, user_info: Json<SignupInput>) -> impl Responder {
     let mut users = app_state.users.lock().unwrap();
     let mut user_index = app_state.user_index.lock().unwrap();
 
@@ -86,21 +95,21 @@ async fn signup(app_state: web::Data<AppState>, user_info: Json<ClientUser>) -> 
             &EncodingKey::from_secret("secret".as_ref()),
         )
         .unwrap();
-
-        println!("{}", token);
-
+    
         return HttpResponse::Ok().json(SignupResponse {
             message: String::from("Signup successfull!"),
+            token: token
         });
     } else {
         return HttpResponse::Conflict().json(SignupResponse {
             message: String::from("User already exist!"),
+            token: String::from("")
         });
     }
 }
 
 #[post("/login")]
-async fn login(app_state: web::Data<AppState>, user_info: Json<ClientUser>) -> impl Responder {
+async fn login(app_state: web::Data<AppState>, user_info: Json<SigninInput>) -> impl Responder {
     let users = app_state.users.lock().unwrap();
 
     let user_found = users
@@ -108,8 +117,9 @@ async fn login(app_state: web::Data<AppState>, user_info: Json<ClientUser>) -> i
         .find(|u| u.username == user_info.username && u.password == user_info.password);
 
     if user_found.is_none() {
-        return HttpResponse::Unauthorized().json(SignupResponse {
+        return HttpResponse::Unauthorized().json(SigninResponse {
             message: String::from("Incorrect credentials"),
+            token: String::from("")
         });
     };
 
@@ -131,7 +141,10 @@ async fn login(app_state: web::Data<AppState>, user_info: Json<ClientUser>) -> i
     )
     .unwrap();
 
-    HttpResponse::Ok().json(SigninResponse { token: token })
+    HttpResponse::Ok().json(SigninResponse { 
+        message: String::from("Login successfull!"),
+        token: token 
+    })
 }
 
 #[actix_web::main]
