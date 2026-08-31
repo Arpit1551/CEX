@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
-use actix_web::{HttpResponse, Responder,  post, web::{self, Json}};
-use chrono::{Duration, Utc};
-use jsonwebtoken::{EncodingKey, Header, encode};
+use actix_web::{HttpResponse, Responder, post, web::{self, Json}};
 
-use crate::{ AppState, types::user::{ SignupInput, SignupResponse, SigninInput, SigninResponse, User, Claims } };
+use crate::{ AppState, types::user::{ 
+    SignupInput, SignupResponse, SigninInput, SigninResponse, User },
+    helper::{token_fn::create_token}
+};
 
 #[post("/signup")]
 async fn signup(app_state: web::Data<AppState>, user_info: Json<SignupInput>) -> impl Responder {
@@ -29,27 +30,18 @@ async fn signup(app_state: web::Data<AppState>, user_info: Json<SignupInput>) ->
         usd_balance.insert(user_index.clone(), 0);
         token_balance.insert(user_index.clone(), HashMap::new());
 
-        let exp = Utc::now()
-            .checked_add_signed(Duration::hours(24))
-            .expect("valid timestamp")
-            .timestamp() as usize;
-
-        let claims = Claims {
-            sub: user_index.clone(),
-            exp,
+        let token = match create_token(user_index.clone()).await {
+            Ok(t) => t,
+            Err(_) => return HttpResponse::InternalServerError().json(SignupResponse {
+                message: String::from("Something went wrong unable to create token!"),
+                token: String::from("")
+            }),
         };
 
         drop(users);
         drop(user_index);
         drop(usd_balance);
         drop(token_balance);
-
-        let token = encode(
-            &Header::default(),
-            &claims,
-            &EncodingKey::from_secret("secret".as_ref()),
-        )
-        .unwrap();
     
         return HttpResponse::Ok().json(SignupResponse {
             message: String::from("Signup successfull!"),
@@ -79,26 +71,23 @@ async fn login(app_state: web::Data<AppState>, user_info: Json<SigninInput>) -> 
         });
     };
 
-    let exp = Utc::now()
-        .checked_add_signed(Duration::hours(24))
-        .expect("valid timestamp")
-        .timestamp() as usize;
-
     let user_index = app_state.user_index.lock().unwrap();
-    let claims = Claims {
-        sub: user_index.clone(),
-        exp,
+    
+    let token = match create_token(user_index.clone()).await {
+        Ok(t) => t,
+        Err(_) => return HttpResponse::Unauthorized().json(SigninResponse{
+            message: String::from("Something went wrong, Unable to create token!"),
+            token: String::from("")
+        })
     };
-
-    let token = encode(
-        &Header::default(),
-        &claims,
-        &EncodingKey::from_secret("secret".as_ref()),
-    )
-    .unwrap();
 
     HttpResponse::Ok().json(SigninResponse { 
         message: String::from("Login successfull!"),
         token: token 
     })
+}
+
+#[post("/balance")]
+async fn balance() -> impl Responder {
+    HttpResponse::Ok().body("balance endpoint created!")
 }

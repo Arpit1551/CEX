@@ -1,10 +1,12 @@
-use actix_web::{App, HttpServer, web};
+use actix_web::{App, HttpServer, middleware::from_fn, web};
 use std::{collections::HashMap, sync::Mutex};
 
-use crate::{routes::user::{login, signup}, types::user::User};
+use crate::{routes::user::{login, signup, balance}, types::user::User, middleware::user::user_auth};
 
 pub mod types;
 pub mod routes;
+pub mod middleware;
+pub mod helper;
 
 struct AppState {
     users: Mutex<Vec<User>>,
@@ -27,6 +29,11 @@ async fn main() -> std::io::Result<()> {
             .app_data(app_state.clone())
             .service(signup)
             .service(login)
+            .service(
+                web::scope("/protected")
+                .wrap(from_fn(user_auth))
+                .service(balance)
+            )
     })
     .bind(("127.0.0.1", 8080))?
     .run()
