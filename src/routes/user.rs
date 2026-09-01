@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use actix_web::{HttpMessage, HttpRequest, HttpResponse, Responder, post, web::{self, Json}};
+use actix_web::{ HttpRequest, HttpResponse, Responder, post, web::{self, Json}};
 
-use crate::{ AppState, helper::token_fn::create_token, middleware::user::UserAuth, types::user::{ 
+use crate::{ AppState, helper::{token_fn::create_token, user_fn::get_user_id}, types::user::{ 
     GetUserBalanceResponse, SigninInput, SigninResponse, SignupInput, SignupResponse, User }
 };
 
@@ -89,9 +89,7 @@ async fn login(app_state: web::Data<AppState>, user_info: Json<SigninInput>) -> 
 #[post("/get_balance")]
 async fn balance(app_state: web::Data<AppState>, req: HttpRequest) -> impl Responder {
 
-    let extension = req.extensions();
-    let user = extension.get::<UserAuth>().unwrap();
-    let user_id = user.id;
+    let user_id = get_user_id(req);
     let usd_balance_data = app_state.usd_balance.lock().unwrap();
     let token_balance_data = app_state.token_balance.lock().unwrap();
 
@@ -106,3 +104,4 @@ async fn balance(app_state: web::Data<AppState>, req: HttpRequest) -> impl Respo
         token_balance: user_asset_balance
     })
 }
+
