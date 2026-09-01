@@ -4,8 +4,8 @@ use chrono::{Duration, Utc};
 use jsonwebtoken::{EncodingKey, Header, DecodingKey, Validation, decode, encode};
 
 pub struct VerifyTokenResposne {
-    valid: bool,
-    user_id: i32
+    pub valid: bool,
+    pub user_id: i32
 }
 
 pub async fn create_token(user_id: i32) -> Result<String, Error> {
