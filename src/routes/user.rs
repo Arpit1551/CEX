@@ -1,10 +1,9 @@
 use std::collections::HashMap;
 
-use actix_web::{HttpResponse, Responder, post, web::{self, Json}};
+use actix_web::{HttpMessage, HttpRequest, HttpResponse, Responder, post, web::{self, Json}};
 
-use crate::{ AppState, types::user::{ 
-    SignupInput, SignupResponse, SigninInput, SigninResponse, User },
-    helper::{token_fn::create_token}
+use crate::{ AppState, helper::token_fn::create_token, middleware::user::UserAuth, types::user::{ 
+    GetUserBalanceResponse, SigninInput, SigninResponse, SignupInput, SignupResponse, User }
 };
 
 #[post("/signup")]
@@ -87,7 +86,23 @@ async fn login(app_state: web::Data<AppState>, user_info: Json<SigninInput>) -> 
     })
 }
 
-#[post("/balance")]
-async fn balance() -> impl Responder {
-    HttpResponse::Ok().body("balance endpoint created!")
+#[post("/get_balance")]
+async fn balance(app_state: web::Data<AppState>, req: HttpRequest) -> impl Responder {
+
+    let extension = req.extensions();
+    let user = extension.get::<UserAuth>().unwrap();
+    let user_id = user.id;
+    let usd_balance_data = app_state.usd_balance.lock().unwrap();
+    let token_balance_data = app_state.token_balance.lock().unwrap();
+
+    let user_usd_balance = usd_balance_data.get(&user_id).unwrap_or(&0).clone();
+    let user_asset_balance = token_balance_data.get(&user_id).unwrap_or(&HashMap::new()).clone();
+
+    drop(usd_balance_data);
+    drop(token_balance_data);
+
+    HttpResponse::Ok().json(GetUserBalanceResponse{
+        usd_balance: user_usd_balance,
+        token_balance: user_asset_balance
+    })
 }

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Serialize)]
@@ -35,4 +37,10 @@ pub struct SigninResponse {
 pub struct Claims {
     pub sub: i32,
     pub exp: usize,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct GetUserBalanceResponse {
+    pub usd_balance: i32,
+    pub token_balance: HashMap<String, u32>
 }
