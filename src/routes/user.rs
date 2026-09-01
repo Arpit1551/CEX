@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use actix_web::{ HttpRequest, HttpResponse, Responder, post, web::{self, Json}};
 
 use crate::{ AppState, helper::{token_fn::create_token, user_fn::get_user_id}, types::user::{ 
-    GetUserBalanceResponse, SigninInput, SigninResponse, SignupInput, SignupResponse, User }
+    GetUserBalanceResponse, SigninInput, SigninResponse, SignupInput, SignupResponse, User, OnRampRequest }
 };
 
 #[post("/signup")]
@@ -105,3 +105,23 @@ async fn balance(app_state: web::Data<AppState>, req: HttpRequest) -> impl Respo
     })
 }
 
+#[post("/onramp")]
+async fn onramp(app_state: web::Data<AppState>, req: HttpRequest, body: Json<OnRampRequest>)-> impl Responder {
+    let user_id = get_user_id(req);
+    let mut user_usd_balance = app_state.usd_balance.lock().unwrap();
+
+    let existing_user_balance = *user_usd_balance.get(&user_id).unwrap_or(&0);
+    user_usd_balance.insert(user_id, existing_user_balance + body.into_inner().qty);
+
+    HttpResponse::Ok().body("Balance updated!")
+}
+
+#[post("/orders")]
+async fn orders(_app_state: web::Data<AppState>) -> impl Responder {
+    HttpResponse::Ok()
+}
+
+#[post("/cancle")]
+async fn cancle(_app_state: web::Data<AppState>) -> impl Responder {
+    HttpResponse::Ok()
+}

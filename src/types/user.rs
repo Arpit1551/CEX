@@ -44,3 +44,8 @@ pub struct GetUserBalanceResponse {
     pub usd_balance: i32,
     pub token_balance: HashMap<String, u32>
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct OnRampRequest {
+    pub qty: i32
+}

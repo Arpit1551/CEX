@@ -1,7 +1,7 @@
 use actix_web::{App, HttpServer, middleware::from_fn, web};
 use std::{collections::HashMap, sync::Mutex};
 
-use crate::{routes::user::{login, signup, balance}, types::user::User, middleware::user::user_auth};
+use crate::{routes::user::{login, signup, balance, onramp, orders, cancle}, types::user::User, middleware::user::user_auth};
 
 pub mod types;
 pub mod routes;
@@ -33,6 +33,9 @@ async fn main() -> std::io::Result<()> {
                 web::scope("/protected")
                 .wrap(from_fn(user_auth))
                 .service(balance)
+                .service(onramp)
+                .service(orders)
+                .service(cancle)
             )
     })
     .bind(("127.0.0.1", 8080))?
