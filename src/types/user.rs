@@ -49,3 +49,13 @@ pub struct GetUserBalanceResponse {
 pub struct OnRampRequest {
     pub qty: i32
 }
+
+#[derive(Serialize, Deserialize)]
+pub struct DepositRequest {
+    pub qty: u32
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DepositResponse {
+   pub msg: String
+}

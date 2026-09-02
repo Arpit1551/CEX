@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::{Mutex, mpsc::{self, Sender}}, thread, };
 
 use crate::{
     UserBalanceTx::{GetBalance, Onramp}, middleware::user::user_auth, routes::user::{
-        balance, cancle, login, onramp, orders, signup
+        balance, cancle, deposit, login, onramp, orders, signup
     }, types::user::User
 };
 
@@ -52,6 +52,12 @@ async fn main() -> std::io::Result<()> {
         }
     });
 
+    // thread::spawn(move || {
+    //     let token_balances: HashMap<i32, HashMap<String, u32>> = HashMap::new();
+
+
+    // });
+
     HttpServer::new(move || {
         App::new()
             .app_data(app_state.clone())
@@ -62,6 +68,7 @@ async fn main() -> std::io::Result<()> {
                 .wrap(from_fn(user_auth))
                 .service(balance)
                 .service(onramp)
+                .service(deposit)
                 .service(orders)
                 .service(cancle)
             )

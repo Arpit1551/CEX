@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use actix_web::{ HttpRequest, HttpResponse, Responder, post, web::{self, Json}};
+use actix_web::{ HttpRequest, HttpResponse, Responder, body, mime::Params, post, web::{self, Json}};
 use futures::channel::oneshot;
 
 use crate::{ 
     AppState, UserBalanceTx::{self, GetBalance, Onramp}, helper::{token_fn::create_token, user_fn::get_user_id }, types::user::{ 
-    GetUserBalanceResponse, OnRampRequest, SigninInput, SigninResponse, SignupInput, SignupResponse, User }
+    GetUserBalanceResponse, OnRampRequest, SigninInput, SigninResponse, SignupInput, SignupResponse, User, DepositRequest, DepositResponse }
 };
 
 #[post("/signup")]
@@ -114,6 +114,24 @@ async fn onramp(app_state: web::Data<AppState>, req: HttpRequest, body: Json<OnR
     app_state.usd_balance.send(UserBalanceTx::Onramp(user_id, body.qty));
 
     HttpResponse::Ok().body("Balance updated!")
+}
+
+#[post("/deposit/{asset_symbol}")]
+async fn deposit(app_state: web::Data<AppState>, req: HttpRequest, symbol: web::Path<String>, body: Json<DepositRequest>) -> impl Responder {
+    
+    let user_id = get_user_id(req);
+    let symbol = symbol.into_inner();
+
+    let mut token_balances = app_state.token_balance.lock().unwrap();
+    let mut user_balance = token_balances.entry(user_id).or_insert(HashMap::new());
+
+    let user_existing_token_balance = user_balance.get(&symbol).unwrap_or(&0);
+    user_balance.insert(symbol, user_existing_token_balance + body.qty);
+    
+
+    HttpResponse::Ok().json(DepositResponse {
+        msg: String::from("Deposit successfull!")
+    })
 }
 
 #[post("/orders")]
