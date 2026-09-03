@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 
-use actix_web::{ HttpRequest, HttpResponse, Responder, body, mime::Params, post, web::{self, Json}};
+use actix_web::{ HttpRequest, HttpResponse, Responder, post, web::{self, Json}};
 use futures::channel::oneshot;
 
 use crate::{ 
-    AppState, UserBalanceTx::{self, GetBalance, Onramp}, helper::{token_fn::create_token, user_fn::get_user_id }, types::user::{ 
-    GetUserBalanceResponse, OnRampRequest, SigninInput, SigninResponse, SignupInput, SignupResponse, User, DepositRequest, DepositResponse }
+    AppState, TokenTransactions::{self, DepositToken, GetAllTokens, GetTokenBalance}, UserBalanceTx::{self, GetBalance, Onramp}, helper::{token_fn::create_token, user_fn::get_user_id }, types::user::{ 
+    DepositRequest, DepositResponse, GetUserBalanceResponse, OnRampRequest, SigninInput, SigninResponse, SignupInput, SignupResponse, User }
 };
 
 #[post("/signup")]
@@ -18,7 +18,6 @@ async fn signup(app_state: web::Data<AppState>, user_info: Json<SignupInput>) ->
     if user_found.is_none() {
         
         app_state.usd_balance.send(Onramp(user_index.clone(), 0));
-        let mut token_balance = app_state.token_balance.lock().unwrap();
         *user_index = *user_index + 1;
 
         let new_user = User {
@@ -28,8 +27,6 @@ async fn signup(app_state: web::Data<AppState>, user_info: Json<SignupInput>) ->
         };
 
         users.push(new_user);
-
-        token_balance.insert(user_index.clone(), HashMap::new());
 
         let token = match create_token(user_index.clone()).await {
             Ok(t) => t,
@@ -41,8 +38,7 @@ async fn signup(app_state: web::Data<AppState>, user_info: Json<SignupInput>) ->
 
         drop(users);
         drop(user_index);
-        drop(token_balance);
-    
+        
         return HttpResponse::Ok().json(SignupResponse {
             message: String::from("Signup successfull!"),
             token: token
@@ -91,15 +87,14 @@ async fn login(app_state: web::Data<AppState>, user_info: Json<SigninInput>) -> 
 async fn balance(app_state: web::Data<AppState>, req: HttpRequest) -> impl Responder {
 
     let user_id = get_user_id(req);
-    let (tx, rx) = oneshot::channel();
-    app_state.usd_balance.send(GetBalance(user_id, tx));
+    let (user_balance_tx, user_balance_rx) = oneshot::channel();
+    let (token_balance_tx, token_balance_rx) = oneshot::channel();
 
-    let token_balance_data = app_state.token_balance.lock().unwrap();
+    app_state.usd_balance.send(GetBalance(user_id, user_balance_tx));
+    app_state.token_balance.send(GetAllTokens(user_id, token_balance_tx));
 
-    let user_usd_balance = rx.await.unwrap();
-    let user_asset_balance = token_balance_data.get(&user_id).unwrap_or(&HashMap::new()).clone();
-
-    drop(token_balance_data);
+    let user_usd_balance = user_balance_rx.await.unwrap();
+    let user_asset_balance = token_balance_rx.await.unwrap();
 
     HttpResponse::Ok().json(GetUserBalanceResponse{
         usd_balance: user_usd_balance,
@@ -121,13 +116,7 @@ async fn deposit(app_state: web::Data<AppState>, req: HttpRequest, symbol: web::
     
     let user_id = get_user_id(req);
     let symbol = symbol.into_inner();
-
-    let mut token_balances = app_state.token_balance.lock().unwrap();
-    let mut user_balance = token_balances.entry(user_id).or_insert(HashMap::new());
-
-    let user_existing_token_balance = user_balance.get(&symbol).unwrap_or(&0);
-    user_balance.insert(symbol, user_existing_token_balance + body.qty);
-    
+    app_state.token_balance.send(TokenTransactions::DepositToken(user_id, symbol, body.qty));
 
     HttpResponse::Ok().json(DepositResponse {
         msg: String::from("Deposit successfull!")

@@ -2,7 +2,7 @@ use actix_web::{App, HttpServer, middleware::from_fn, web};
 use std::{collections::HashMap, sync::{Mutex, mpsc::{self, Sender}}, thread, };
 
 use crate::{
-    UserBalanceTx::{GetBalance, Onramp}, middleware::user::user_auth, routes::user::{
+    TokenTransactions::{DepositToken, GetAllTokens, GetTokenBalance}, UserBalanceTx::{GetBalance, Onramp}, middleware::user::user_auth, routes::user::{
         balance, cancle, deposit, login, onramp, orders, signup
     }, types::user::User
 };
@@ -16,28 +16,36 @@ enum UserBalanceTx {
     Onramp(i32, i32),
     GetBalance(i32, futures::channel::oneshot::Sender<i32>)
 }
+
+enum TokenTransactions {
+    DepositToken(i32, String, i32),
+    GetTokenBalance(i32, String, futures::channel::oneshot::Sender<i32>),
+    GetAllTokens(i32, futures::channel::oneshot::Sender<HashMap<String, i32>>)
+}
 struct AppState {
     users: Mutex<Vec<User>>,
     user_index: Mutex<i32>,
     usd_balance: Sender<UserBalanceTx>,
-    token_balance: Mutex<HashMap<i32, HashMap<String, u32>>>,
+    token_balance: Sender<TokenTransactions>,
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
 
-    let (tx, rx) =  mpsc::channel();
+    let (user_balance_tx, user_balance_rx) =  mpsc::channel();
+    let (token_balance_tx, token_balance_rx) = mpsc::channel();
+
     let app_state = web::Data::new(AppState {
         users: Mutex::new(vec![]),
         user_index: Mutex::new(0),
-        usd_balance: tx,
-        token_balance: Mutex::new(HashMap::new()),
+        usd_balance: user_balance_tx,
+        token_balance: token_balance_tx
     });
 
     thread::spawn( move ||  {
         let mut balances: HashMap<i32, i32> = HashMap::new();
 
-        while let message = rx.recv().unwrap() {
+        while let message = user_balance_rx.recv().unwrap() {
 
             match message {
                 Onramp(user_id, qty) => {
@@ -52,11 +60,32 @@ async fn main() -> std::io::Result<()> {
         }
     });
 
-    // thread::spawn(move || {
-    //     let token_balances: HashMap<i32, HashMap<String, u32>> = HashMap::new();
+    thread::spawn(move || {
+        let mut token_balances: HashMap<i32, HashMap<String, i32>> = HashMap::new();
 
+        while let message = token_balance_rx.recv().unwrap() {
+            match message {
+                DepositToken(user_id, symbol, qty) => {
 
-    // });
+                    let mut existing_user_tokens = token_balances.entry(user_id).or_insert(HashMap::new());
+                    let token_balance = existing_user_tokens.get(&symbol).unwrap_or(&0);
+
+                    existing_user_tokens.insert(symbol, *token_balance + qty);
+                }  
+                GetTokenBalance(user_id, symbol, rx   ) => {
+
+                    let user_token = token_balances.entry(user_id).or_insert(HashMap::new());
+                    let user_token_balance = user_token.get(&symbol).unwrap_or(&0);
+
+                    rx.send(*user_token_balance);
+                }
+                GetAllTokens(user_id, rv) => {
+                    rv.send(token_balances.entry(user_id).or_insert(HashMap::new()).clone());
+                }
+            }
+        }
+
+    }); 
 
     HttpServer::new(move || {
         App::new()
