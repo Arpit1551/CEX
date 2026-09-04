@@ -10,6 +10,7 @@ dependencies = [
  "chrono",
  "futures",
  "jsonwebtoken",
+ "rand 0.10.2",
  "serde",
 ]
 

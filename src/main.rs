@@ -1,5 +1,6 @@
 use actix_web::{App, HttpServer, middleware::from_fn, web};
-use std::{collections::{BTreeMap, HashMap}, sync::{Mutex, mpsc::{self, Sender}}, thread, };
+use std::{collections::{BTreeMap, HashMap, VecDeque}, process, sync::{Mutex, mpsc::{self, Sender}}, thread, };
+use rand::Rng;  
 
 use crate::{
     OrderBook::AddOrder, TokenTransactions::{DepositToken, GetAllTokens, GetTokenBalance}, UserBalanceTx::{GetBalance, Onramp}, middleware::user::user_auth, routes::user::{
@@ -27,6 +28,12 @@ enum OrderBook {
     CreateOrder(String),
     AddOrder(i32, String, i32, i32)
 }
+
+enum FillsTypes {
+    OrderBookEntry,
+    OrderCompleted
+}
+
 struct AppState {
     users: Mutex<Vec<User>>,
     user_index: Mutex<i32>,
@@ -44,8 +51,10 @@ struct OrderBookEntry {
 }
 
 struct Fills {
-    seller: i32,
-    buyer: i32,
+    header: FillsTypes,
+    user_id: Option<i32>,
+    seller: Option<i32>,
+    buyer: Option<i32>,
     qty: i32,
     price: i32
 }
@@ -110,8 +119,8 @@ async fn main() -> std::io::Result<()> {
 
     thread::spawn( move || {
         let symbol = "SOL";
-        let bids: BTreeMap<String, Vec<OrderBookEntry>> = BTreeMap::new();
-        let ask: BTreeMap<String, Vec<OrderBookEntry>> = BTreeMap::new();
+        let bids: BTreeMap<String, VecDeque<OrderBookEntry>> = BTreeMap::new();
+        let ask: BTreeMap<String, VecDeque<OrderBookEntry>> = BTreeMap::new();
 
         while let message = order_book_rv.recv().unwrap() {
             match message {
@@ -131,8 +140,10 @@ async fn main() -> std::io::Result<()> {
                                     order.filled_qty += unfilled_qty;
 
                                     let fill = Fills{
-                                        seller: order.user_id,
-                                        buyer: user_id,
+                                        header: FillsTypes::OrderCompleted,
+                                        user_id: None,
+                                        seller: Some(order.user_id),
+                                        buyer: Some(user_id),
                                         price,
                                         qty
                                     };
@@ -142,21 +153,24 @@ async fn main() -> std::io::Result<()> {
                                     break;
                                 } else {
                                     let fill = Fills {
-                                        seller: order.user_id,
-                                        buyer: user_id,
+                                        header: FillsTypes::OrderCompleted,
+                                        user_id: None,
+                                        seller: Some(order.user_id),
+                                        buyer: Some(user_id),
                                         price,
                                         qty: left_qty
                                     };
                                     fills.push(fill);
 
                                     unfilled_qty - left_qty;
-
-                                    // we have to remove the order that is filled for the ask   
+                                    ask_price_orders.pop_front();
                                 }
                             }
+
                             if unfilled_qty == 0 {
                                 break;
                             }
+                            
                         } else {
                             if unfilled_qty != 0 {
                                 let order_book_entry = OrderBookEntry{
@@ -164,8 +178,20 @@ async fn main() -> std::io::Result<()> {
                                     price,
                                     qty,
                                     filled_qty: qty - unfilled_qty,
-                                    order_id: 
+                                    order_id: rand::random_range(0..=999)
                                 };
+                                let price_vec = bids.entry(price.to_string()).or_insert(VecDeque::new());
+                                price_vec.push_back(order_book_entry);
+
+                                let fill = Fills {
+                                    header: FillsTypes::OrderBookEntry,
+                                    user_id: Some(user_id),
+                                    seller: None,
+                                    buyer: None,
+                                    price,
+                                    qty: unfilled_qty
+                                };
+                                fills.push(fill);
                             }
                         }
                             

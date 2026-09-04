@@ -3,7 +3,7 @@ use futures::channel::oneshot;
 
 use crate::{ 
     AppState, TokenTransactions::{self, DepositToken, GetAllTokens, GetTokenBalance}, UserBalanceTx::{self, GetBalance, Onramp}, helper::{token_fn::create_token, user_fn::get_user_id }, types::user::{ 
-    DepositRequest, DepositResponse, GetUserBalanceResponse, OnRampRequest, SigninInput, SigninResponse, SignupInput, SignupResponse, User }
+    DepositRequest, DepositResponse, GetUserBalanceResponse, OnRampRequest, SigninInput, SigninResponse, SignupInput, SignupResponse, User, OrderRequest }
 };
 
 #[post("/signup")]
@@ -122,7 +122,7 @@ async fn deposit(app_state: web::Data<AppState>, req: HttpRequest, symbol: web::
 }
 
 #[post("/orders")]
-async fn orders(_app_state: web::Data<AppState>) -> impl Responder {
+async fn orders(_app_state: web::Data<AppState>, body: web::Json<OrderRequest>, req: HttpRequest) -> impl Responder {
     HttpResponse::Ok()
 }
 
