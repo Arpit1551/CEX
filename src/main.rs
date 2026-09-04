@@ -1,8 +1,8 @@
 use actix_web::{App, HttpServer, middleware::from_fn, web};
-use std::{collections::HashMap, sync::{Mutex, mpsc::{self, Sender}}, thread, };
+use std::{collections::{BTreeMap, HashMap}, sync::{Mutex, mpsc::{self, Sender}}, thread, };
 
 use crate::{
-    TokenTransactions::{DepositToken, GetAllTokens, GetTokenBalance}, UserBalanceTx::{GetBalance, Onramp}, middleware::user::user_auth, routes::user::{
+    OrderBook::AddOrder, TokenTransactions::{DepositToken, GetAllTokens, GetTokenBalance}, UserBalanceTx::{GetBalance, Onramp}, middleware::user::user_auth, routes::user::{
         balance, cancle, deposit, login, onramp, orders, signup
     }, types::user::User
 };
@@ -22,11 +22,32 @@ enum TokenTransactions {
     GetTokenBalance(i32, String, futures::channel::oneshot::Sender<i32>),
     GetAllTokens(i32, futures::channel::oneshot::Sender<HashMap<String, i32>>)
 }
+
+enum OrderBook {
+    CreateOrder(String),
+    AddOrder(i32, String, i32, i32)
+}
 struct AppState {
     users: Mutex<Vec<User>>,
     user_index: Mutex<i32>,
     usd_balance: Sender<UserBalanceTx>,
     token_balance: Sender<TokenTransactions>,
+    order_book: Sender<OrderBook>
+}
+
+struct OrderBookEntry {
+    user_id: i32,
+    price: i32,
+    qty: i32,
+    filled_qty: i32,
+    order_id: i32
+}
+
+struct Fills {
+    seller: i32,
+    buyer: i32,
+    qty: i32,
+    price: i32
 }
 
 #[actix_web::main]
@@ -34,12 +55,14 @@ async fn main() -> std::io::Result<()> {
 
     let (user_balance_tx, user_balance_rx) =  mpsc::channel();
     let (token_balance_tx, token_balance_rx) = mpsc::channel();
+    let (order_book_tx, order_book_rv) = mpsc::channel();
 
     let app_state = web::Data::new(AppState {
         users: Mutex::new(vec![]),
         user_index: Mutex::new(0),
         usd_balance: user_balance_tx,
-        token_balance: token_balance_tx
+        token_balance: token_balance_tx,
+        order_book: order_book_tx
     });
 
     thread::spawn( move ||  {
@@ -84,6 +107,73 @@ async fn main() -> std::io::Result<()> {
                 }
             }
         }
+
+    thread::spawn( move || {
+        let symbol = "SOL";
+        let bids: BTreeMap<String, Vec<OrderBookEntry>> = BTreeMap::new();
+        let ask: BTreeMap<String, Vec<OrderBookEntry>> = BTreeMap::new();
+
+        while let message = order_book_rv.recv().unwrap() {
+            match message {
+                AddOrder(user_id, msg_type, qty, price ) => {
+
+                    let fills:Vec<Fills> = vec![];
+
+                    if msg_type == "bid" {
+                        let mut unfilled_qty = qty;
+                        let (ask_price, ask_price_orders) = ask.first_key_value().unwrap();
+
+                        if ask_price.parse::<i32>().unwrap() <= price {
+                            for order in ask_price_orders{
+                                let left_qty = order.qty - order.filled_qty;
+
+                                if left_qty >= unfilled_qty {
+                                    order.filled_qty += unfilled_qty;
+
+                                    let fill = Fills{
+                                        seller: order.user_id,
+                                        buyer: user_id,
+                                        price,
+                                        qty
+                                    };
+                                    fills.push(fill);
+
+                                    unfilled_qty = 0;
+                                    break;
+                                } else {
+                                    let fill = Fills {
+                                        seller: order.user_id,
+                                        buyer: user_id,
+                                        price,
+                                        qty: left_qty
+                                    };
+                                    fills.push(fill);
+
+                                    unfilled_qty - left_qty;
+
+                                    // we have to remove the order that is filled for the ask   
+                                }
+                            }
+                            if unfilled_qty == 0 {
+                                break;
+                            }
+                        } else {
+                            if unfilled_qty != 0 {
+                                let order_book_entry = OrderBookEntry{
+                                    user_id,
+                                    price,
+                                    qty,
+                                    filled_qty: qty - unfilled_qty,
+                                    order_id: 
+                                };
+                            }
+                        }
+                            
+                        }
+                    }
+                }
+            }
+        });
 
     }); 
 

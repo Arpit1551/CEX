@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use actix_web::{ HttpRequest, HttpResponse, Responder, post, web::{self, Json}};
 use futures::channel::oneshot;
 
@@ -38,7 +36,7 @@ async fn signup(app_state: web::Data<AppState>, user_info: Json<SignupInput>) ->
 
         drop(users);
         drop(user_index);
-        
+
         return HttpResponse::Ok().json(SignupResponse {
             message: String::from("Signup successfull!"),
             token: token
