@@ -64,6 +64,12 @@ pub struct DepositResponse {
 pub struct  OrderRequest {
     pub header: String,
     pub order_type: String,
+    pub asset: String,
     pub price: i32,
     pub qty: i32
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct OrderResponse {
+    pub msg: String
 }

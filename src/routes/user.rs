@@ -1,9 +1,10 @@
-use actix_web::{ HttpRequest, HttpResponse, Responder, post, web::{self, Json}};
+use actix_web::{ HttpRequest, HttpResponse, Responder, body, post, web::{self, Json}};
 use futures::channel::oneshot;
+use std::sync::mpsc;
 
 use crate::{ 
-    AppState, TokenTransactions::{self, DepositToken, GetAllTokens, GetTokenBalance}, UserBalanceTx::{self, GetBalance, Onramp}, helper::{token_fn::create_token, user_fn::get_user_id }, types::user::{ 
-    DepositRequest, DepositResponse, GetUserBalanceResponse, OnRampRequest, SigninInput, SigninResponse, SignupInput, SignupResponse, User, OrderRequest }
+    AppState, OrderBook::AddOrder, TokenTransactions::{self, DepositToken, GetAllTokens, GetTokenBalance}, UserBalanceTx::{self, GetBalance, Onramp}, helper::{token_fn::create_token, user_fn::get_user_id }, middleware::user, types::user::{ 
+    DepositRequest, DepositResponse, GetUserBalanceResponse, OnRampRequest, OrderRequest, OrderResponse, SigninInput, SigninResponse, SignupInput, SignupResponse, User }
 };
 
 #[post("/signup")]
@@ -122,7 +123,32 @@ async fn deposit(app_state: web::Data<AppState>, req: HttpRequest, symbol: web::
 }
 
 #[post("/orders")]
-async fn orders(_app_state: web::Data<AppState>, body: web::Json<OrderRequest>, req: HttpRequest) -> impl Responder {
+async fn orders(app_state: web::Data<AppState>, body: web::Json<OrderRequest>, req: HttpRequest) -> impl Responder {
+
+    let user_id = get_user_id(req);
+    let (check_balance_tx, check_balance_rx) = oneshot::channel();
+    let (order_book_response_tx, order_book_response_rx) = mpsc::channel();
+
+    if body.header == "bid" {
+        app_state.usd_balance.send(GetBalance(user_id, check_balance_tx));
+
+        if check_balance_rx.await.unwrap() < body.price * body.qty {
+            return HttpResponse::BadRequest().json(OrderResponse {
+                msg: String::from("Insufficient fund!")
+            })};
+
+            app_state.order_book.send(
+                crate::AddOrder(
+                    user_id,
+                    body.header, 
+                    body.qty,
+                    body.price, 
+                    order_book_response_tx
+                ));
+
+            println!("{:?}", order_book_response_rx.recv().unwrap());
+    }
+
     HttpResponse::Ok()
 }
 
