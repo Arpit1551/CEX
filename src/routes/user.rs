@@ -124,7 +124,6 @@ async fn deposit(app_state: web::Data<AppState>, req: HttpRequest, symbol: web::
 
 #[post("/orders")]
 async fn orders(app_state: web::Data<AppState>, body: web::Json<OrderRequest>, req: HttpRequest) -> impl Responder {
-
     let user_id = get_user_id(req);
     let (check_balance_tx, check_balance_rx) = oneshot::channel();
     let (order_book_response_tx, order_book_response_rx) = mpsc::channel();
@@ -135,21 +134,30 @@ async fn orders(app_state: web::Data<AppState>, body: web::Json<OrderRequest>, r
         if check_balance_rx.await.unwrap() < body.price * body.qty {
             return HttpResponse::BadRequest().json(OrderResponse {
                 msg: String::from("Insufficient fund!")
-            })};
-
-            app_state.order_book.send(
-                crate::AddOrder(
-                    user_id,
-                    body.header, 
-                    body.qty,
-                    body.price, 
-                    order_book_response_tx
-                ));
-
-            println!("{:?}", order_book_response_rx.recv().unwrap());
+            });
+        }
+        println!("{}", String::from("Enter in the bid"));
+        app_state.order_book.send(crate::AddOrder(
+            user_id,
+            body.header.clone(),
+            body.qty,
+            body.price,
+            order_book_response_tx,
+        ));
+        println!("{}", String::from("App state call completed!"));
+        
+        let result = order_book_response_rx.recv().unwrap();
+        println!("{:?}", result);
+        
+        println!("{}", String::from("end"));
+        return HttpResponse::Ok().json(OrderResponse {
+            msg: String::from("Order placed successfully!")
+        });
     }
 
-    HttpResponse::Ok()
+    HttpResponse::Ok().json(OrderResponse {
+        msg: String::from("Unsupported order type!")
+    })
 }
 
 #[post("/cancle")]
