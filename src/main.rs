@@ -1,4 +1,5 @@
 use actix_web::{App, HttpServer, middleware::from_fn, web};
+use serde::de::value;
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
     process,
@@ -138,16 +139,13 @@ async fn main() -> std::io::Result<()> {
         let mut bids: BTreeMap<i32, VecDeque<OrderBookEntry>> = BTreeMap::new();
         let mut ask: BTreeMap<i32, VecDeque<OrderBookEntry>> = BTreeMap::new();
 
-        println!("{}", String::from("Entry in thread"));
         while let message = order_book_rv.recv().unwrap() {
             match message {
                 AddOrder(user_id, msg_type, qty, price, order_book_response_tx) => {
-                    println!("{}", String::from("Entry in fn"));
 
                     let mut fills: Vec<Fill> = vec![];
 
                     if msg_type == "bid" {
-                        println!("{}", String::from("Entry in bid"));
                         let mut unfilled_qty = qty;
 
                         for (key, value) in ask.iter_mut() {
@@ -167,6 +165,7 @@ async fn main() -> std::io::Result<()> {
 
                                         fills.push(fill);
                                         unfilled_qty = 0;
+                                        value.pop_front();
 
                                         break;
                                     } else {
@@ -219,6 +218,48 @@ async fn main() -> std::io::Result<()> {
                         println!("{:?}", bids);
                         println!("{:?}", ask);
                         order_book_response_tx.send(fills);
+
+                    } else if msg_type == "ask" {
+                        
+                        let mut unfilled_qty = qty;
+                        for (key, value) in bids.iter_mut().next_back() {
+                            if *key >= price {
+                                for order in value.clone() {
+                                    let left_qty  = order.qty - order.filled_qty;
+
+                                    if left_qty >= qty {
+                                        let fill = Fill {
+                                            header: FillsTypes::OrderCompleted,
+                                            buyer: Some(order.user_id),
+                                            seller: Some(user_id),
+                                            qty: qty,
+                                            price,
+                                            user_id: None
+                                        };
+                                        fills.push(fill);
+                                        unfilled_qty = 0;
+                                        value.pop_front();
+                                        break;
+                                    } else {
+                                        let fill = Fill {
+                                            header: FillsTypes::OrderCompleted,
+                                            buyer: Some(order.user_id),
+                                            seller: Some(user_id),
+                                            price,
+                                            qty: left_qty,
+                                            user_id: None
+                                        };
+
+                                        fills.push(fill);
+                                        unfilled_qty -= left_qty;
+                                        value.pop_front();
+                                    }
+                                }
+                            } else {
+                                // THE USER WILL SIT ON THE ORDER BOOK 
+                            }
+                        }
+
                     }
                 }
             }
