@@ -1,4 +1,5 @@
 use actix_web::{App, HttpServer, middleware::from_fn, web};
+use jsonwebtoken::signature::rand_core::le;
 use serde::de::value;
 use std::{
     collections::{BTreeMap, HashMap, VecDeque},
@@ -11,13 +12,7 @@ use std::{
 };
 
 use crate::{
-    FillsTypes::OrderCompleted,
-    OrderBook::AddOrder,
-    TokenTransactions::{DepositToken, GetAllTokens, GetTokenBalance},
-    UserBalanceTx::{GetBalance, Onramp},
-    middleware::user::user_auth,
-    routes::user::{balance, cancle, deposit, login, onramp, orders, signup},
-    types::user::User,
+   OrderBook::AddOrder, TokenTransactions::{DepositToken, GetAllTokens, GetTokenBalance}, UserBalanceTx::{GetBalance, Onramp}, middleware::user::user_auth, routes::user::{balance, cancle, deposit, login, onramp, orders, signup}, types::user::User,
 };
 
 pub mod helper;
@@ -150,10 +145,26 @@ async fn main() -> std::io::Result<()> {
 
                         for (key, value) in ask.iter_mut() {
                             if *key >= price {
-                                for order in value.clone() {
+                                for mut order in value.clone() {
                                     let left_qty = order.qty - order.filled_qty;
 
-                                    if left_qty >= unfilled_qty {
+                                    if left_qty > unfilled_qty {
+                                        let fill = Fill {
+                                            header: FillsTypes::OrderCompleted,
+                                            buyer: Some(user_id),
+                                            seller: Some(order.user_id),
+                                            price,
+                                            qty,
+                                            user_id: None,
+                                        };
+
+                                        fills.push(fill);
+                                        unfilled_qty = 0;
+                                        
+                                        value.front_mut().unwrap().filled_qty += qty;
+
+                                        break;
+                                    } else if left_qty == 0 {
                                         let fill = Fill {
                                             header: FillsTypes::OrderCompleted,
                                             buyer: Some(user_id),
@@ -168,7 +179,9 @@ async fn main() -> std::io::Result<()> {
                                         value.pop_front();
 
                                         break;
-                                    } else {
+                                    }
+                                    else {
+                                         
                                         let fill = Fill {
                                             header: FillsTypes::OrderCompleted,
                                             buyer: Some(user_id),
@@ -220,14 +233,13 @@ async fn main() -> std::io::Result<()> {
                         order_book_response_tx.send(fills);
 
                     } else if msg_type == "ask" {
-                        
                         let mut unfilled_qty = qty;
                         for (key, value) in bids.iter_mut().next_back() {
                             if *key >= price {
-                                for order in value.clone() {
+                                for mut order in value.clone() {
                                     let left_qty  = order.qty - order.filled_qty;
 
-                                    if left_qty >= qty {
+                                    if left_qty > qty {
                                         let fill = Fill {
                                             header: FillsTypes::OrderCompleted,
                                             buyer: Some(order.user_id),
@@ -236,10 +248,30 @@ async fn main() -> std::io::Result<()> {
                                             price,
                                             user_id: None
                                         };
+
+                                        value.front_mut().unwrap().filled_qty += qty;
+
+                                        fills.push(fill);
+                                        unfilled_qty = 0;
+                                        break;
+
+                                    } else if left_qty == 0 {
+                                        let fill = Fill {
+                                            header: FillsTypes::OrderCompleted,
+                                            buyer: Some(order.user_id),
+                                            seller: Some(user_id),
+                                            qty: qty,
+                                            price,
+                                            user_id: None
+                                        };
+
+                                        order.filled_qty += qty;
+
                                         fills.push(fill);
                                         unfilled_qty = 0;
                                         value.pop_front();
                                         break;
+
                                     } else {
                                         let fill = Fill {
                                             header: FillsTypes::OrderCompleted,
@@ -255,11 +287,40 @@ async fn main() -> std::io::Result<()> {
                                         value.pop_front();
                                     }
                                 }
+                                if unfilled_qty == 0 {
+                                    break;
+                                }
                             } else {
-                                // THE USER WILL SIT ON THE ORDER BOOK 
+                                break;
                             }
                         }
 
+                        if unfilled_qty != 0 {
+                            let new_ask = OrderBookEntry {
+                                user_id,
+                                price,
+                                qty: unfilled_qty,
+                                filled_qty: qty - unfilled_qty,
+                                order_id: rand::random_range(0..=999)
+                            };
+
+                            let order_at_the_price = ask.entry(price).or_default();
+                            order_at_the_price.push_back(new_ask);
+
+                            let fill = Fill { 
+                                header: FillsTypes::OrderBookEntry,
+                                user_id: Some(user_id),
+                                seller: None,
+                                buyer: None,
+                                qty: unfilled_qty,
+                                price
+                            };
+
+                            fills.push(fill);
+                        };
+                        println!("Bids -> {:?}", bids);
+                        println!("Asks -> {:?}", ask);
+                        order_book_response_tx.send(fills);
                     }
                 }
             }

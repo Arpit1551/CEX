@@ -128,7 +128,7 @@ async fn orders(app_state: web::Data<AppState>, body: web::Json<OrderRequest>, r
     let (check_balance_tx, check_balance_rx) = oneshot::channel();
     let (order_book_response_tx, order_book_response_rx) = mpsc::channel();
 
-    if body.header == "bid" {
+    if body.header == "bid" || body.header == "ask" {
         app_state.usd_balance.send(GetBalance(user_id, check_balance_tx));
 
         if check_balance_rx.await.unwrap() < body.price * body.qty {
@@ -144,12 +144,10 @@ async fn orders(app_state: web::Data<AppState>, body: web::Json<OrderRequest>, r
             body.price,
             order_book_response_tx,
         ));
-        println!("{}", String::from("App state call completed!"));
-        
+
         let result = order_book_response_rx.recv().unwrap();
         println!("{:?}", result);
-        
-        println!("{}", String::from("end"));
+
         return HttpResponse::Ok().json(OrderResponse {
             msg: String::from("Order placed successfully!")
         });
