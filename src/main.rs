@@ -82,7 +82,7 @@ async fn main() -> std::io::Result<()> {
         order_book: order_book_tx,
     });
 
-    thread::spawn(move || {
+    thread::spawn( move || {
         let mut balances: HashMap<i32, i32> = HashMap::new();
 
         while let message = user_balance_rx.recv().unwrap() {
@@ -143,7 +143,7 @@ async fn main() -> std::io::Result<()> {
                     if msg_type == "bid" {
                         let mut unfilled_qty = qty;
 
-                        for (key, value) in ask.iter_mut() {
+                        for (key, value) in ask.iter_mut().next_back() {
                             if *key >= price {
                                 for mut order in value.clone() {
                                     let left_qty = order.qty - order.filled_qty;
@@ -176,7 +176,7 @@ async fn main() -> std::io::Result<()> {
 
                                         fills.push(fill);
                                         unfilled_qty = 0;
-                                        value.pop_front();
+                                        value.pop_back();
 
                                         break;
                                     }
@@ -193,7 +193,7 @@ async fn main() -> std::io::Result<()> {
 
                                         fills.push(fill);
                                         unfilled_qty -= left_qty;
-                                        value.pop_front();
+                                        value.pop_back();
                                     }
                                 }
 
@@ -234,8 +234,8 @@ async fn main() -> std::io::Result<()> {
 
                     } else if msg_type == "ask" {
                         let mut unfilled_qty = qty;
-                        for (key, value) in bids.iter_mut().next_back() {
-                            if *key >= price {
+                        for (key, value) in bids.iter_mut() {
+                            if *key <= price {
                                 for mut order in value.clone() {
                                     let left_qty  = order.qty - order.filled_qty;
 
@@ -285,6 +285,7 @@ async fn main() -> std::io::Result<()> {
                                         fills.push(fill);
                                         unfilled_qty -= left_qty;
                                         value.pop_front();
+
                                     }
                                 }
                                 if unfilled_qty == 0 {
@@ -299,7 +300,7 @@ async fn main() -> std::io::Result<()> {
                             let new_ask = OrderBookEntry {
                                 user_id,
                                 price,
-                                qty: unfilled_qty,
+                                qty,
                                 filled_qty: qty - unfilled_qty,
                                 order_id: rand::random_range(0..=999)
                             };
@@ -339,8 +340,9 @@ async fn main() -> std::io::Result<()> {
                     .service(onramp)
                     .service(deposit)
                     .service(orders)
-                    .service(cancle),
+                    .service(cancle)
             )
+             
     })
     .bind(("127.0.0.1", 8080))?
     .run()

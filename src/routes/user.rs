@@ -70,7 +70,7 @@ async fn login(app_state: web::Data<AppState>, user_info: Json<SigninInput>) -> 
     
     let token = match create_token(user_index.clone()).await {
         Ok(t) => t,
-        Err(_) => return HttpResponse::Unauthorized().json(SigninResponse{
+        Err(_) => return HttpResponse::Unauthorized().json(SigninResponse {
             message: String::from("Something went wrong, Unable to create token!"),
             token: String::from("")
         })

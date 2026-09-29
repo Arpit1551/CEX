@@ -1,1 +1,26 @@
+# Rust
 /target
+**/*.rs.bk
+
+# .dist output folder (build artifacts)
+/.dist
+
+# Bun / Node
+node_modules/
+bun.lockb
+*.tsbuildinfo
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
