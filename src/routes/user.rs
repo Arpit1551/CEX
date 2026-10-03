@@ -127,19 +127,27 @@ async fn deposit(app_state: web::Data<AppState>, req: HttpRequest, symbol: web::
 #[post("/orders")]
 async fn orders(app_state: web::Data<AppState>, body: web::Json<OrderRequest>, req: HttpRequest) -> impl Responder {
     let user_id = get_user_id(req);
-    let (check_balance_tx, check_balance_rx) = oneshot::channel();
+
+    let (check_usd_balance_tx, check_usd_balance_rx) = oneshot::channel();
+    let (check_token_balance_tx, check_token_balance_rx) = oneshot::channel();
     let (order_book_response_tx, order_book_response_rx) = mpsc::channel();
 
-    if body.header == "bid" || body.header == "ask" {
-        app_state.usd_balance.send(GetBalance(user_id, check_balance_tx));
+    if body.asset != "SOL" {
+        return  HttpResponse::NotAcceptable().json(OrderResponse{
+            msg: String::from("Only SOL is supported!!")
+        });
+    };
 
-        if check_balance_rx.await.unwrap() < body.price * body.qty {
+    if body.header == "bid" {
+        app_state.usd_balance.send(GetBalance(user_id, check_usd_balance_tx));
+
+        if check_usd_balance_rx.await.unwrap() < body.price * body.qty {
             return HttpResponse::BadRequest().json(OrderResponse {
                 msg: String::from("Insufficient fund!")
             });
-        }
-        println!("{}", String::from("Enter in the bid"));
-        app_state.order_book.send(crate::AddOrder(
+        };
+
+        let _ = app_state.order_book.send(crate::AddOrder(
             user_id,
             body.header.clone(),
             body.qty,
@@ -148,11 +156,22 @@ async fn orders(app_state: web::Data<AppState>, body: web::Json<OrderRequest>, r
         ));
 
         let result = order_book_response_rx.recv().unwrap();
-        println!("{:?}", result);
 
         return HttpResponse::Ok().json(OrderResponse {
             msg: String::from("Order placed successfully!")
         });
+
+    } else if body.header == "ask" {
+
+        let _ = app_state.token_balance.send(GetTokenBalance(user_id, body.asset.clone(), check_token_balance_tx));
+
+        if check_token_balance_rx.await.unwrap() < body.qty {
+            return HttpResponse::BadRequest().json(OrderResponse{
+                msg: String::from("Not enough tokens!")
+            });
+        };
+
+        // let _ = app_state.
     }
 
     HttpResponse::Ok().json(OrderResponse {

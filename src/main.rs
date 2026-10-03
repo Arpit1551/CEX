@@ -14,7 +14,7 @@ use std::{
 use crate::{
     OrderBook::AddOrder,
     TokenTransactions::{DepositToken, GetAllTokens, GetTokenBalance},
-    UserBalanceTx::{GetBalance, Onramp},
+    UserBalanceTx::{GetBalance, LockBalance, Onramp, UnlockBalance},
     middleware::user::user_auth,
     routes::user::{balance, cancle, deposit, login, onramp, orders, signup},
     types::user::User,
@@ -28,6 +28,8 @@ pub mod types;
 enum UserBalanceTx {
     Onramp(i32, i32),
     GetBalance(i32, futures::channel::oneshot::Sender<i32>),
+    LockBalance(i32, i32),
+    UnlockBalance(i32, i32),
 }
 
 enum TokenTransactions {
@@ -89,6 +91,7 @@ async fn main() -> std::io::Result<()> {
 
     thread::spawn(move || {
         let mut balances: HashMap<i32, i32> = HashMap::new();
+        let mut locked_amount: HashMap<i32, i32> = HashMap::new();
 
         while let message = user_balance_rx.recv().unwrap() {
             match message {
@@ -96,9 +99,26 @@ async fn main() -> std::io::Result<()> {
                     let existing_balance = balances.get(&user_id).unwrap_or(&0);
                     balances.insert(user_id, qty + existing_balance);
                 }
+
                 GetBalance(user_id, tx) => {
                     let user_balance = *balances.get(&user_id).unwrap_or(&0);
                     tx.send(user_balance);
+                }
+
+                LockBalance(user_id, amount) => {
+                    let user_locked_balance = locked_amount.get(&user_id).unwrap_or(&0);
+                    let user_balance = balances.get(&user_id).unwrap_or(&0);
+
+                    locked_amount.insert(user_id, *user_locked_balance + amount);
+                    balances.insert(user_id, *user_balance - amount);
+                }
+
+                UnlockBalance(user_id, amount) => {
+                    let user_locked_balance = locked_amount.get(&user_id).unwrap_or(&0);
+                    let user_balance = balances.get(&user_id).unwrap_or(&0);
+
+                    locked_amount.insert(user_id, *user_locked_balance - amount);
+                    balances.insert(user_id, *user_balance + amount);
                 }
             }
         }
@@ -142,7 +162,6 @@ async fn main() -> std::io::Result<()> {
         while let message = order_book_rv.recv().unwrap() {
             match message {
                 AddOrder(user_id, msg_type, qty, price, order_book_response_tx) => {
-
                     let mut fills: Vec<Fill> = vec![];
                     let mut unfilled_qty = qty;
 
@@ -211,7 +230,7 @@ async fn main() -> std::io::Result<()> {
                                         header: FillsTypes::OrderCompleted,
                                         buyer: Some(maker.user_id),
                                         seller: Some(user_id),
-                                        price: level_price, 
+                                        price: level_price,
                                         qty: take,
                                         user_id: None,
                                     });
