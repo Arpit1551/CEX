@@ -73,3 +73,9 @@ pub struct  OrderRequest {
 pub struct OrderResponse {
     pub msg: String
 }
+
+#[derive(Serialize, Deserialize)]
+
+pub struct OnrampResponse {
+    pub msg: String
+}

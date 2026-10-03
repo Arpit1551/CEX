@@ -4,7 +4,7 @@ use std::sync::mpsc;
 
 use crate::{ 
     AppState, OrderBook::AddOrder, TokenTransactions::{self, DepositToken, GetAllTokens, GetTokenBalance}, UserBalanceTx::{self, GetBalance, Onramp}, helper::{token_fn::create_token, user_fn::get_user_id }, middleware::user, types::user::{ 
-    DepositRequest, DepositResponse, GetUserBalanceResponse, OnRampRequest, OrderRequest, OrderResponse, SigninInput, SigninResponse, SignupInput, SignupResponse, User }
+    DepositRequest, DepositResponse, GetUserBalanceResponse, OnRampRequest, OnrampResponse, OrderRequest, OrderResponse, SigninInput, SigninResponse, SignupInput, SignupResponse, User }
 };
 
 #[post("/signup")]
@@ -107,7 +107,9 @@ async fn onramp(app_state: web::Data<AppState>, req: HttpRequest, body: Json<OnR
     let user_id = get_user_id(req);
     app_state.usd_balance.send(UserBalanceTx::Onramp(user_id, body.qty));
 
-    HttpResponse::Ok().body("Balance updated!")
+    HttpResponse::Ok().json(OnrampResponse{
+        msg: String::from("Balance updated!")
+    })
 }
 
 #[post("/deposit/{asset_symbol}")]
