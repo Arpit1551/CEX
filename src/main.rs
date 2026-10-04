@@ -12,12 +12,7 @@ use std::{
 };
 
 use crate::{
-    OrderBook::AddOrder,
-    TokenTransactions::{DepositToken, GetAllTokens, GetTokenBalance},
-    UserBalanceTx::{GetBalance, LockBalance, Onramp, UnlockBalance},
-    middleware::user::user_auth,
-    routes::user::{balance, cancle, deposit, login, onramp, orders, signup},
-    types::user::User,
+    OrderBook::AddOrder, TokenTransactions::{DepositToken, GetAllTokens, GetTokenBalance, LockToken, UnlockToken}, UserBalanceTx::{GetBalance, LockBalance, Onramp, UnlockBalance}, helper::token_fn, middleware::user::user_auth, routes::user::{balance, cancle, deposit, login, onramp, orders, signup}, types::user::User,
 };
 
 pub mod helper;
@@ -36,6 +31,8 @@ enum TokenTransactions {
     DepositToken(i32, String, i32),
     GetTokenBalance(i32, String, futures::channel::oneshot::Sender<i32>),
     GetAllTokens(i32, futures::channel::oneshot::Sender<HashMap<String, i32>>),
+    LockToken(i32, String, i32),
+    UnlockToken(i32, String, i32),
 }
 
 enum OrderBook {
@@ -73,6 +70,7 @@ struct Fill {
     buyer: Option<i32>,
     qty: i32,
     price: i32,
+    order_id: Option<i32>
 }
 
 #[actix_web::main]
@@ -126,6 +124,7 @@ async fn main() -> std::io::Result<()> {
 
     thread::spawn(move || {
         let mut token_balances: HashMap<i32, HashMap<String, i32>> = HashMap::new();
+        let mut lock_token_balances: HashMap<i32, HashMap<String, i32>> = HashMap::new(); 
 
         while let message = token_balance_rx.recv().unwrap() {
             match message {
@@ -143,12 +142,32 @@ async fn main() -> std::io::Result<()> {
                     rx.send(*user_token_balance);
                 }
                 GetAllTokens(user_id, rv) => {
-                    rv.send(
+                    let _ = rv.send(
                         token_balances
                             .entry(user_id)
                             .or_insert(HashMap::new())
                             .clone(),
                     );
+                }
+                LockToken(user_id, token, amount) => {
+                    let mut user_tokens = token_balances.entry(user_id).or_default();
+                    let mut locked_tokens = lock_token_balances.entry(user_id).or_default();
+
+                    let token_balance = user_tokens.get(&token).unwrap_or(&0);
+                    let lock_token_balance = locked_tokens.get(&token).unwrap_or(&0);
+
+                    locked_tokens.insert(token.clone(), *lock_token_balance + amount);
+                    user_tokens.insert(token, *token_balance - amount);
+                }
+                UnlockToken(user_id, token, amount ) => {
+                    let mut user_tokens = token_balances.entry(user_id).or_default();
+                    let mut locked_tokens = lock_token_balances.entry(user_id).or_default();
+
+                    let token_balance = user_tokens.get(&token).unwrap_or(&0);
+                    let lock_token_balance = locked_tokens.get(&token).unwrap_or(&0);
+
+                    locked_tokens.insert(token.clone(), *lock_token_balance - amount);
+                    user_tokens.insert(token, *token_balance + amount);
                 }
             }
         }
@@ -186,6 +205,7 @@ async fn main() -> std::io::Result<()> {
                                         price: level_price,
                                         qty: take,
                                         user_id: None,
+                                        order_id: None
                                     });
                                 }
                                 if maker.filled_qty >= maker.qty {
@@ -196,12 +216,13 @@ async fn main() -> std::io::Result<()> {
                         ask.retain(|_, level| !level.is_empty());
 
                         if unfilled_qty > 0 {
+                            let new_order_id = rand::random_range(0..=999);
                             bids.entry(price).or_default().push_back(OrderBookEntry {
                                 user_id,
                                 price,
                                 qty: unfilled_qty,
                                 filled_qty: 0,
-                                order_id: rand::random_range(0..=999),
+                                order_id: new_order_id,
                             });
                             fills.push(Fill {
                                 header: FillsTypes::OrderBookEntry,
@@ -210,6 +231,7 @@ async fn main() -> std::io::Result<()> {
                                 buyer: None,
                                 qty: unfilled_qty,
                                 price,
+                                order_id: Some(new_order_id)
                             });
                         }
                     } else if msg_type == "ask" {
@@ -233,6 +255,7 @@ async fn main() -> std::io::Result<()> {
                                         price: level_price,
                                         qty: take,
                                         user_id: None,
+                                        order_id: None
                                     });
                                 }
                                 if maker.filled_qty >= maker.qty {
@@ -243,12 +266,15 @@ async fn main() -> std::io::Result<()> {
                         bids.retain(|_, level| !level.is_empty());
 
                         if unfilled_qty > 0 {
+
+                            let new_order_id = rand::random_range(0..=999);
+
                             ask.entry(price).or_default().push_back(OrderBookEntry {
                                 user_id,
                                 price,
                                 qty: unfilled_qty,
                                 filled_qty: 0,
-                                order_id: rand::random_range(0..=999),
+                                order_id: new_order_id,
                             });
                             fills.push(Fill {
                                 header: FillsTypes::OrderBookEntry,
@@ -257,6 +283,7 @@ async fn main() -> std::io::Result<()> {
                                 buyer: None,
                                 qty: unfilled_qty,
                                 price,
+                                order_id: Some(new_order_id)
                             });
                         }
                     }

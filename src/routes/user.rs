@@ -3,7 +3,7 @@ use futures::channel::oneshot;
 use std::sync::mpsc;
 
 use crate::{ 
-    AppState, OrderBook::AddOrder, TokenTransactions::{self, DepositToken, GetAllTokens, GetTokenBalance}, UserBalanceTx::{self, GetBalance, Onramp}, helper::{token_fn::create_token, user_fn::get_user_id }, middleware::user, types::user::{ 
+    AppState, OrderBook::AddOrder, TokenTransactions::{self, DepositToken, GetAllTokens, GetTokenBalance, LockToken}, UserBalanceTx::{self, GetBalance, LockBalance, Onramp}, helper::{token_fn::create_token, user_fn::get_user_id }, middleware::user, types::user::{ 
     DepositRequest, DepositResponse, GetUserBalanceResponse, OnRampRequest, OnrampResponse, OrderRequest, OrderResponse, SigninInput, SigninResponse, SignupInput, SignupResponse, User }
 };
 
@@ -139,13 +139,15 @@ async fn orders(app_state: web::Data<AppState>, body: web::Json<OrderRequest>, r
     };
 
     if body.header == "bid" {
-        app_state.usd_balance.send(GetBalance(user_id, check_usd_balance_tx));
+        let _ = app_state.usd_balance.send(GetBalance(user_id, check_usd_balance_tx));
 
         if check_usd_balance_rx.await.unwrap() < body.price * body.qty {
             return HttpResponse::BadRequest().json(OrderResponse {
                 msg: String::from("Insufficient fund!")
             });
         };
+
+        let _ = app_state.usd_balance.send(LockBalance(user_id, body.qty * body.price));
 
         let _ = app_state.order_book.send(crate::AddOrder(
             user_id,
@@ -169,9 +171,9 @@ async fn orders(app_state: web::Data<AppState>, body: web::Json<OrderRequest>, r
             return HttpResponse::BadRequest().json(OrderResponse{
                 msg: String::from("Not enough tokens!")
             });
-        };
+        }
 
-        // let _ = app_state.
+        let _ = app_state.token_balance.send(LockToken(user_id, body.asset.clone(), body.qty));
     }
 
     HttpResponse::Ok().json(OrderResponse {
