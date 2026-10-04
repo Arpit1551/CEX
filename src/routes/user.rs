@@ -3,7 +3,7 @@ use futures::channel::oneshot;
 use std::sync::mpsc;
 
 use crate::{ 
-    AppState, OrderBook::AddOrder, TokenTransactions::{self, DepositToken, GetAllTokens, GetTokenBalance, LockToken}, UserBalanceTx::{self, GetBalance, LockBalance, Onramp}, helper::{token_fn::create_token, user_fn::get_user_id }, middleware::user, types::user::{ 
+    AppState, FillsTypes::{OrderBookEntry, OrderCompleted}, OrderBook::AddOrder, TokenTransactions::{self, DepositToken, GetAllTokens, GetTokenBalance, LockToken, SettelTokenBalances}, UserBalanceTx::{self, GetBalance, LockBalance, Onramp, SettelBalances}, helper::{token_fn::create_token, user_fn::get_user_id }, middleware::user, types::user::{ 
     DepositRequest, DepositResponse, GetUserBalanceResponse, OnRampRequest, OnrampResponse, OrderRequest, OrderResponse, SigninInput, SigninResponse, SignupInput, SignupResponse, User }
 };
 
@@ -126,6 +126,7 @@ async fn deposit(app_state: web::Data<AppState>, req: HttpRequest, symbol: web::
 
 #[post("/orders")]
 async fn orders(app_state: web::Data<AppState>, body: web::Json<OrderRequest>, req: HttpRequest) -> impl Responder {
+    println!("{}",String::from("Entry in the orders"));
     let user_id = get_user_id(req);
 
     let (check_usd_balance_tx, check_usd_balance_rx) = oneshot::channel();
@@ -158,9 +159,22 @@ async fn orders(app_state: web::Data<AppState>, body: web::Json<OrderRequest>, r
         ));
 
         let result = order_book_response_rx.recv().unwrap();
+        println!("{:?}",result);
+        for item in result {
+            match item.header {
+                OrderCompleted => {
+                    let amount = item.qty * item.price;
+                    let _ =  app_state.usd_balance.send(SettelBalances(item.buyer.unwrap(), item.seller.unwrap(), amount));
+                    let _ = app_state.token_balance.send(SettelTokenBalances(item.buyer.unwrap(), item.seller.unwrap(), item.asset, item.qty));
+                }   
+                OrderBookEntry => {
+                    println!("Order added in the order book. order_id -> {:?}", item.order_id.unwrap());
+                }
+            }
+        }
 
         return HttpResponse::Ok().json(OrderResponse {
-            msg: String::from("Order placed successfully!")
+            msg: String::from("Bid order placed successfully!")
         });
 
     } else if body.header == "ask" {
@@ -174,6 +188,33 @@ async fn orders(app_state: web::Data<AppState>, body: web::Json<OrderRequest>, r
         }
 
         let _ = app_state.token_balance.send(LockToken(user_id, body.asset.clone(), body.qty));
+        let _ = app_state.order_book.send(crate::AddOrder(
+            user_id,
+            body.header.clone(),
+            body.qty,
+            body.price,
+            order_book_response_tx,
+        ));
+
+        let result = order_book_response_rx.recv().unwrap();
+
+        for item in result {
+            match item.header {
+                OrderCompleted => {
+                    let amount = item.qty * item.price;
+                    let _ =  app_state.usd_balance.send(SettelBalances(item.buyer.unwrap(), item.seller.unwrap(), amount));
+                    let _ = app_state.token_balance.send(SettelTokenBalances(item.buyer.unwrap(), item.seller.unwrap(), item.asset, item.qty));
+                }   
+                OrderBookEntry => {
+                    println!("Order added in the order book. order_id -> {:?}", item.order_id.unwrap());
+                }
+            }
+        }
+
+        return HttpResponse::Ok().json(OrderResponse {
+            msg: String::from("Ask order completed!")
+        });
+
     }
 
     HttpResponse::Ok().json(OrderResponse {

@@ -58,7 +58,7 @@ test("Adding bid", async () => {
             order_type: "market",
             price: 10,
             qty: 2,
-            asset: "sol"
+            asset: "SOL"
         },
         {
             headers:
@@ -71,7 +71,7 @@ test("Adding bid", async () => {
             order_type: "market",
             price: 20,
             qty: 2,
-            asset: "sol"
+            asset: "SOL"
         },
         {
             headers: {
@@ -85,7 +85,7 @@ test("Adding bid", async () => {
             order_type: "market",
             price: 20,
             qty: 3,
-            asset: "sol"
+            asset: "SOL"
         },
         {
             headers: {
@@ -95,7 +95,7 @@ test("Adding bid", async () => {
     );
 
     expect(makingBid.status).toBe(200);
-    expect(makingBid.data.msg).toBe("Order placed successfully!");
+    expect(makingBid.data.msg).toBe("Bid order placed successfully!");
 })
 
 test("Making ask", async () => {
@@ -115,13 +115,22 @@ test("Making ask", async () => {
         }
     );
 
+    await api.post("/protected/deposit/SOL", 
+        { qty: 20 },
+        {
+            headers: {
+                Authorization: `Bearer ${response.data.token}`
+            }
+        }
+    );
+
     let ask_response = await api.post("/protected/orders",
         {
             header: "ask",
             order_type: "market",
             price: 30,
             qty: 2,
-            asset: "sol"
+            asset: "SOL"
         },
         {
             headers: {
@@ -136,7 +145,7 @@ test("Making ask", async () => {
             order_type: "market",
             price: 20,
             qty: 4,
-            asset: "sol"
+            asset: "SOL"
         },
         {
             headers: {
@@ -146,6 +155,6 @@ test("Making ask", async () => {
     )
 
     expect(ask_response.status).toBe(200);
-    expect(ask_response.data.msg).toBe("Order placed successfully!");
+    expect(ask_response.data.msg).toBe("Ask order completed!");
 
 })

@@ -12,7 +12,15 @@ use std::{
 };
 
 use crate::{
-    OrderBook::AddOrder, TokenTransactions::{DepositToken, GetAllTokens, GetTokenBalance, LockToken, UnlockToken}, UserBalanceTx::{GetBalance, LockBalance, Onramp, UnlockBalance}, helper::token_fn, middleware::user::user_auth, routes::user::{balance, cancle, deposit, login, onramp, orders, signup}, types::user::User,
+    OrderBook::AddOrder,
+    TokenTransactions::{
+        DepositToken, GetAllTokens, GetTokenBalance, LockToken, SettelTokenBalances, UnlockToken,
+    },
+    UserBalanceTx::{GetBalance, LockBalance, Onramp, SettelBalances, UnlockBalance},
+    helper::token_fn,
+    middleware::user::user_auth,
+    routes::user::{balance, cancle, deposit, login, onramp, orders, signup},
+    types::user::User,
 };
 
 pub mod helper;
@@ -25,6 +33,7 @@ enum UserBalanceTx {
     GetBalance(i32, futures::channel::oneshot::Sender<i32>),
     LockBalance(i32, i32),
     UnlockBalance(i32, i32),
+    SettelBalances(i32, i32, i32),
 }
 
 enum TokenTransactions {
@@ -33,6 +42,7 @@ enum TokenTransactions {
     GetAllTokens(i32, futures::channel::oneshot::Sender<HashMap<String, i32>>),
     LockToken(i32, String, i32),
     UnlockToken(i32, String, i32),
+    SettelTokenBalances(i32, i32, String, i32),
 }
 
 enum OrderBook {
@@ -69,8 +79,9 @@ struct Fill {
     seller: Option<i32>,
     buyer: Option<i32>,
     qty: i32,
+    asset: String,
     price: i32,
-    order_id: Option<i32>
+    order_id: Option<i32>,
 }
 
 #[actix_web::main]
@@ -118,13 +129,18 @@ async fn main() -> std::io::Result<()> {
                     locked_amount.insert(user_id, *user_locked_balance - amount);
                     balances.insert(user_id, *user_balance + amount);
                 }
+
+                SettelBalances(buyer, seller, amount) => {
+                    *locked_amount.entry(buyer).or_insert(0) -= amount;
+                    *balances.entry(seller).or_insert(0) += amount;
+                }
             }
         }
     });
 
     thread::spawn(move || {
         let mut token_balances: HashMap<i32, HashMap<String, i32>> = HashMap::new();
-        let mut lock_token_balances: HashMap<i32, HashMap<String, i32>> = HashMap::new(); 
+        let mut lock_token_balances: HashMap<i32, HashMap<String, i32>> = HashMap::new();
 
         while let message = token_balance_rx.recv().unwrap() {
             match message {
@@ -159,7 +175,7 @@ async fn main() -> std::io::Result<()> {
                     locked_tokens.insert(token.clone(), *lock_token_balance + amount);
                     user_tokens.insert(token, *token_balance - amount);
                 }
-                UnlockToken(user_id, token, amount ) => {
+                UnlockToken(user_id, token, amount) => {
                     let mut user_tokens = token_balances.entry(user_id).or_default();
                     let mut locked_tokens = lock_token_balances.entry(user_id).or_default();
 
@@ -169,12 +185,16 @@ async fn main() -> std::io::Result<()> {
                     locked_tokens.insert(token.clone(), *lock_token_balance - amount);
                     user_tokens.insert(token, *token_balance + amount);
                 }
+                SettelTokenBalances(buyer, seller, asset, amount) => {
+                    *lock_token_balances.entry(seller).or_default().entry(asset.clone()).or_insert(0) -= amount;
+                    *token_balances .entry(buyer).or_default().entry(asset).or_insert(0) += amount;
+                }
             }
         }
     });
 
     thread::spawn(move || {
-        let symbol = "SOL";
+        let symbol: String = String::from("SOL");
         let mut bids: BTreeMap<i32, VecDeque<OrderBookEntry>> = BTreeMap::new();
         let mut ask: BTreeMap<i32, VecDeque<OrderBookEntry>> = BTreeMap::new();
 
@@ -204,8 +224,9 @@ async fn main() -> std::io::Result<()> {
                                         seller: Some(maker.user_id),
                                         price: level_price,
                                         qty: take,
+                                        asset: symbol.clone(),
                                         user_id: None,
-                                        order_id: None
+                                        order_id: None,
                                     });
                                 }
                                 if maker.filled_qty >= maker.qty {
@@ -231,7 +252,8 @@ async fn main() -> std::io::Result<()> {
                                 buyer: None,
                                 qty: unfilled_qty,
                                 price,
-                                order_id: Some(new_order_id)
+                                asset: symbol.clone(),
+                                order_id: Some(new_order_id),
                             });
                         }
                     } else if msg_type == "ask" {
@@ -254,8 +276,9 @@ async fn main() -> std::io::Result<()> {
                                         seller: Some(user_id),
                                         price: level_price,
                                         qty: take,
+                                        asset: symbol.clone(),
                                         user_id: None,
-                                        order_id: None
+                                        order_id: None,
                                     });
                                 }
                                 if maker.filled_qty >= maker.qty {
@@ -266,7 +289,6 @@ async fn main() -> std::io::Result<()> {
                         bids.retain(|_, level| !level.is_empty());
 
                         if unfilled_qty > 0 {
-
                             let new_order_id = rand::random_range(0..=999);
 
                             ask.entry(price).or_default().push_back(OrderBookEntry {
@@ -283,7 +305,8 @@ async fn main() -> std::io::Result<()> {
                                 buyer: None,
                                 qty: unfilled_qty,
                                 price,
-                                order_id: Some(new_order_id)
+                                asset: symbol.clone(),
+                                order_id: Some(new_order_id),
                             });
                         }
                     }
